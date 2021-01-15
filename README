@@ -1,0 +1,156 @@
+shimmy10
+costico
+
+*NOTICE: The UML was uploaded by shimy10 and the code by costico.
+=============================
+=     File Description
+=============================
+1. Checker - abstract class of all check types.
+2. CheckList - checks a list of string where each string is a line of the code in sjavac.
+3. CheckMethod - checks inner method scopes of the code.
+4. CheckIfWhile - checks inner if/while blocks within the code.
+5. CheckVariables - checks variable declaration/assignment lines.
+6. CheckMethodCalls - checks that method calls are equivalent to method's name and parameters.
+7. CheckSuffix - checks that line ends with ";" (unless its a comment).
+8. CheckComment - check that the comment starts with "//" and then right away characters with no space in between.
+9. CheckReserved - checks that reserved sjavac words are not used as names.
+10. Sjavac - the mane runner of the code and all the checks, which of course includes the main method,
+    and catches exceptions and deals with them accordingly.
+11. LocalMapBuilder - builds a local map per sub-scope.
+12. MapDeepCopy - does deeps copy on complex mutable data structures we use.
+13. Type1Exception -  thrown when an illegal line is found in the sjavac code, has a message of 1 (to be printed)
+14. Type2Exception - extends IOException, thrown when an illegal file was given.
+15. Error - extends Type2Exception, has a message of 2 (to be printed)
+16. GlobalMapBuilder - builds the map of the global variables.
+17. InitializedVariablesUpdate - checks for all the variables that were declared and initialized.
+18. ScopeGetter - builds an array of the inner scope, method block or If/While block.
+19. ScopesCheckMaker - makes the needed checks for scope.
+
+=============================
+=     Design details        =
+=============================
+1. As shown in our UML, we decided to create an abstract Checker class which all our check type classes extend from
+ (CheckList, CheckMethod, CheckIfWhil, CheckVariables, etc). We decided to make Checker abstract rather than interface
+  so to be able to create new instances needed for our program flow (see Implementation details ahead) and in order to
+  keep with the object oriented design of dividing our program into small, independent units.
+  Different than our UML, we created within Checker an abstract check() method which all of its inheritors implement
+  as their only public method. Any other method used in our check type classes are private,
+  keeping to a minimal API (as apposed to how the API looks in the UML).
+
+2. We created 2 types of Exceptions: IOExceptions when bad files were given, and Type1Exceptions when illegal sjavac
+  code is used within the file, as explained further in answers to questions.
+
+3. Global, final and local maps:
+    Seeing that all parts of the code can know global variables but inner variables are know only to their own scope or
+    outer scopes from them and not to more inner scopes or to other foreign scopes (such as a separate method, or
+    if/while AFTER if/while, and not within) we decided to create an ArrayList of maps (e.g. a:int) which works by
+    hierarchy, meaning in the first 2 spots will be the global and final variables which are known to all, and then
+    each inner block creates its own local map of variables and adding it to it's correct place within the list fitting
+    by hierarchy.
+    Whenever a we come up to a new inner scope we deep copy our list of maps
+    and give that to the new inner scope to work with, we do this because lists and maps are mutable and so if we add
+    an inner local map and then reach a foreign scope to it is not supposed to know that local map of its foreigner.
+    * all of this goes the same for another list of maps, holding which tells us if each block's variables have been
+    initialized or not (e.g. a: "Initialized"), once again based on hierarchy.
+
+=============================
+=  Implementation details   =
+=============================
+1. 3. We designed the flow of our program as such:
+    a) we start out by parsing the lines of the sjavac file into a List of Strings, within our main.
+
+    b) we create a new CheckList object and use it's check() method to check the lines of the file, basing our checks
+     on correct outline of legal code such as correct initialization and assignments, suffix, no outer method calls
+     or if/while blocks, etc. If a method starter line shows up (and not a method call!), we will not check it, rather
+     we will save its name (for later use) and pass the entire method scope to CheckMethod:
+
+    c) in case a method starter line comes up we create a new CheckMethod object (still within the CheckList.check()
+     method), giving it a sub-list of the method lines, and call upon it's check method which will read these sub-list
+     lines and check for correct outline of legal code such as correct initialization and assignments, suffix, no inner
+     new method starter, corrects signature, and correct amount of "{" to "}"
+     This time though it will also check for method calls or if/while blocks. If a method call is found, it will save
+     the line for later checking to make sure there is such a method which the call fits to. If an if/while block is
+     found we will create a new CheckIfWhile object (whithin CheckMethod, within CheckList) and call upon its check()
+     method, giving it a sub-sub-list of the inner if/while block:
+
+     d) the CheckIfWhile.check() method will make sure, similar to the check method, will read these sub-list-block
+     lines and check for correct outline of legal code such as correct initialization and assignments, suffix, no inner
+     new method starter, corrects signature, and correct amount of "{" to "}". In case of an inner if/while block, we
+     will once again creact a new CheckIfwhile.check() with this new inner block and so the same as before and so forth.
+
+     e)once we are done with all the inner method and if/while blocks we return to the CheckList and then check all the
+     method calls we saved, making sure that they called actual existing methods, and making sure that the parameters
+     they used are equivalent with the type of parameters each method expects to receive.
+
+     * Local, global and final maps for each part of the flow are as explained in the design section.
+     ** any illegality to this flow will throw a Type1Exception as explained above.
+
+=============================
+=    Answers to questions   =
+=============================
+1. Error handling: Besides the IOExceptions which print 2 as told, we decided to create an a Type1Exception which is
+ thrown whenever an illegal activity is found in the sjavac code, then caught in the main and resulting with printing 1.
+ We decided to work this way and not wait for boolean results in order to keep a more natural flow to the code and also
+ not to waste runtime when an illegal activity is found.
+
+2. Adding new types of variables:
+ Based an our design (as explained above) our code can easily add new implementations for new types of variables. All that
+ would be needed is:
+ a) add to the CheckVariables class a *switch case* of the new type we are adding (e.g. float).
+ b) adding an option for the new type to any regex which reads lines and expects to see a type.
+  For example if were adding float, our common declarationPattern regex will change from:
+  ^(int|String|boolean|double|char)\h+([a-zA-Z]+[\w]*|[_][\w]+)[\h]*\;$ to:
+  ^(int|String|boolean|double|char|float)\h+([a-zA-Z]+[\w]*|[_][\w]+)[\h]*\;$
+  and of course adding a regex which accepts only values which fit the type.
+
+3. Adding different method types (e.g. int foo()):
+ Based on our design, in order to add new method types few minor changes will be needed:
+ a) In the CheckList class we will have to change an if statement from checking if the line starts with "void" and only
+  then using the isMethodStarter method to check the signature regex, to stright away calling isMethodStarter.
+  Furthermore we will have to allow said regex to accept the new type as a legal stater in addition to void.
+
+ b) General return statements will have to change (in the sjavac language, not just in our code) allowing the return
+  statement to return a constant or a variable and not just "return;". Once this is allowed we will have to make sure,
+  using our verifier map, that our CheckMethod class will check that the constant/variable which is returned
+  is of the same type as the method type.
+
+ c) Method calls will need to be able to be assigned into a variable and not just called upon. In order for this to work
+  we will need to create a new map saving each method name (as key) with its type (as value). This map will exchange the
+  methodName ArrayList we currently use. After that we will be able to check that the method type is equivalent to the
+ type of the variable it is being assigned to.
+
+4. Adding Classes:
+ For simplification, lets assume that there can be several classes per sjavac file and that each file can be
+ looked at as a single package, but other files cannot be seen as part of the package.
+ a) In order for this to work we will need to look at each class as we have looked up until now at methods/if/while:
+  We will use our counter to make sure that the class opens "{" and closes "}" legally and we will check each class as
+  its own scope (same as we do for methods/if/while). Furthermore, each class will now have it's own gloabal map, final
+  map, method's list, etc, and no class can reach other classes maps/lists, just like how two methods' local maps are
+  foreign to each other in our current code.
+ b) We will also need to make a class signature regex and check that each class starts
+  accordingly (e.g. "class MyClass {").
+ c) we will allow instances of classes to be started within other classes and then allowing said class's methods to be
+  called upon. We shall do this by creating a new regex which will allow a statement such as:
+  "MyClass mc = new MyClass();" and then we can use lets say "mc.foo();"
+  Of course, we will make sure that these calls are legal.
+
+5. Two main regex used:
+ a) as shown above we commonly used this regex: ^(int|String|boolean|double|char)\h+([a-zA-Z]+[\w]*|[_][\w]+)[\h]*\;$
+ as our declarationPattern which allows a line of (a single) declaration so that:
+  (after a trim() to the line) it must start with the type, next at lease one space, then a variable name which either:
+  start with at lease one letter (lower or upper case) and after that come any amount of other letter,
+  digits or underscores, if at all or, starts with an underscore but then must come after it at lease one other
+  character, whether being letter, digit or underscore. Then (optional) any amount of spaces or tabs,
+  but no new line (\s) and finally, ending with ";".
+  *Almost identically do we check multi declarations in one line e.g "int a, b;".
+
+ b) we also commonly used this regex:
+ ^final\h+(int|boolean|String|double|char)\h+([_][\w]+|[a-zA-Z]\w*)\h*\=\h*\-?\h*[\W|\w"']+([\.+][\d]+)?\h*\;$
+ as our finalSinglePattern which allows of a (single) final declaration so that:
+ (after a trim() to the line) it must start with the word final, then at least once space, then the type, then again
+ at least one space, then the variable name (as explained above in the declarationPattern regex), then optional spaces,
+ then the "=" character then optional spaces then any amount of legal characters (the value, which may fit any legal
+ type), then again optional spaces and finally ending with ";".
+ *Making sure the value fits the type happens later on using different regex.
+ **Almost identically do we check multi final declarations.
+
